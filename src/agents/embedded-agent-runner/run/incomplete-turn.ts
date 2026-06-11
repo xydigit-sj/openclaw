@@ -643,19 +643,25 @@ export function shouldTreatEmptyAssistantReplyAsSilent(params: {
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
 }): boolean {
+  // A deliberate silent-reply token (e.g. NO_REPLY) with no deliverable payloads
+  // should be treated as a successful silent turn regardless of the silence flag.
+  // This prevents empty-response retries and model-fallback cascades when the
+  // assistant intentionally chose silence. (#92038)
+  const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
+  if (
+    params.payloadCount === 0 &&
+    !params.aborted &&
+    !params.timedOut &&
+    assistant?.stopReason !== "error" &&
+    hasOnlySilentAssistantReply(params.attempt.assistantTexts)
+  ) {
+    return true;
+  }
   if (!params.allowEmptyAssistantReplyAsSilent || shouldSkipPlanningOnlyRetry(params)) {
     return false;
   }
   if (hasCommittedMessagingToolDeliveryEvidence(params.attempt)) {
     return false;
-  }
-  const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
-  if (
-    params.payloadCount === 0 &&
-    assistant?.stopReason !== "error" &&
-    hasOnlySilentAssistantReply(params.attempt.assistantTexts)
-  ) {
-    return true;
   }
   // Post-tool empty stops are ambiguous provider failures, not intentional silence.
   // Let the retry/incomplete-turn paths decide whether replay is safe.
